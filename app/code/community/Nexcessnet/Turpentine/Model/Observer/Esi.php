@@ -286,6 +286,7 @@ class Nexcessnet_Turpentine_Model_Observer_Esi extends Varien_Event_Observer {
         $scopeParam = $esiHelper->getEsiScopeParam();
         $methodParam = $esiHelper->getEsiMethodParam();
         $esiData = new Varien_Object();
+        $esiData->setCurrentUrl( Mage::getBaseUrl(Mage_Core_Model_Store::URL_TYPE_WEB) . $_SERVER['REQUEST_URI'] );
         $esiData->setStoreId( Mage::app()->getStore()->getId() );
         $esiData->setDesignPackage( Mage::getDesign()->getPackageName() );
         $esiData->setDesignTheme( Mage::getDesign()->getTheme( 'layout' ) );
