@@ -114,8 +114,11 @@ sub vcl_recv {
         return (pipe);
     }
 
-    # remove double slashes from the URL, for higher cache hit rate
-    set req.url = regsuball(req.url, "(.*)//+(.*)", "\1/\2");
+    # convert multiple slashes to a single slash in the URL, excluding those
+    # after a colon, such as in the case of a URL passed in a query string. as
+    # the URL is used for the varnish hash, this helps normalise the URL for
+    # a higher cache hit rate
+    set req.url = regsuball(req.url, "([^:])//+", "\1/");
 
     {{normalize_encoding}}
     {{normalize_user_agent}}
