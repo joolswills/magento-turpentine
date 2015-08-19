@@ -46,6 +46,7 @@ import std;
 
 ## Custom Subroutines
 
+{{generate_session_start}}
 sub generate_session {
     # generate a UUID and add `frontend=$UUID` to the Cookie header, or use SID
     # from SID URL param
@@ -72,7 +73,7 @@ sub generate_session {
     } else {
         set req.http.Cookie = req.http.X-Varnish-Faked-Session;
     }
-}
+} 
 
 sub generate_session_expires {
     # sets X-Varnish-Cookie-Expires to now + esi_private_ttl in format:
@@ -92,7 +93,7 @@ sub generate_session_expires {
         );
     }C
 }
-
+{{generate_session_end}}
 ## Varnish Subroutines
 
 sub vcl_recv {
@@ -106,24 +107,25 @@ sub vcl_recv {
         }
     }
 
+    # Normalize request data before potentially sending things off to the
+    # backend. This ensures all request types get the same information, most
+    # notably POST requests getting a normalized user agent string to empower
+    # adaptive designs.
+    {{normalize_encoding}}
+    {{normalize_user_agent}}
+    {{normalize_host}}
+
     # We only deal with GET and HEAD by default
     # we test this here instead of inside the url base regex section
     # so we can disable caching for the entire site if needed
     if (!{{enable_caching}} || req.http.Authorization ||
-        req.request !~ "^(GET|HEAD)$" ||
+        req.request !~ "^(GET|HEAD|OPTIONS)$" ||
         req.http.Cookie ~ "varnish_bypass={{secret_handshake}}") {
         return (pipe);
     }
 
-    # convert multiple slashes to a single slash in the URL, excluding those
-    # after a colon, such as in the case of a URL passed in a query string. as
-    # the URL is used for the varnish hash, this helps normalise the URL for
-    # a higher cache hit rate
+    # remove double slashes from the URL, for higher cache hit rate
     set req.url = regsuball(req.url, "([^:])//+", "\1/");
-
-    {{normalize_encoding}}
-    {{normalize_user_agent}}
-    {{normalize_host}}
 
     # check if the request is for part of magento
     if (req.url ~ "{{url_base_regex}}") {
@@ -156,6 +158,10 @@ sub vcl_recv {
                 error 403 "External ESI requests are not allowed";
             }
         }
+        # if host is not allowed in magento pass to backend
+        if (req.http.host !~ "{{allowed_hosts_regex}}") {
+            return (pass);
+        }
         # no frontend cookie was sent to us AND this is not an ESI or AJAX call
         if (req.http.Cookie !~ "frontend=" && !req.http.X-Varnish-Esi-Method) {
             if (client.ip ~ crawler_acl ||
@@ -164,7 +170,8 @@ sub vcl_recv {
                 set req.http.Cookie = "frontend=crawler-session";
             } else {
                 # it's a real user, make up a new session for them
-                call generate_session;
+                {{generate_session}}# call generate_session;
+                return (pipe);
             }
         }
         if ({{force_cache_static}} &&
@@ -189,11 +196,12 @@ sub vcl_recv {
             # TODO: should this be pass or pipe?
             return (pass);
         }
-        if (req.url ~ "[?&](utm_source|utm_medium|utm_campaign|gclid|cx|ie|cof|siteurl)=") {
-            # Strip out Google related parameters
-            set req.url = regsuball(req.url, "(?:(\?)?|&)(?:utm_source|utm_medium|utm_campaign|gclid|cx|ie|cof|siteurl)=[^&]+", "\1");
+        if ({{enable_get_ignored}} && req.url ~ "[?&]({{get_param_ignored}})=") {
+            # Strip out Ignored GET parameters
+            set req.url = regsuball(req.url, "(?:(\?)?|&)(?:{{get_param_ignored}})=[^&]+", "\1");
             set req.url = regsuball(req.url, "(?:(\?)&|\?$)", "\1");
         }
+
 
         # everything else checks out, try and pull from the cache
         return (lookup);
@@ -240,6 +248,12 @@ sub vcl_hash {
         {{advanced_session_validation}}
 
     }
+
+    if (req.http.X-Varnish-Esi-Access == "customer_group" &&
+            req.http.Cookie ~ "customer_group=") {
+        hash_data(regsub(req.http.Cookie, "^.*?customer_group=([^;]*);*.*$", "\1"));
+    }
+    
     return (hash);
 }
 
@@ -339,12 +353,25 @@ sub vcl_fetch {
 sub vcl_deliver {
     if (req.http.X-Varnish-Faked-Session) {
         # need to set the set-cookie header since we just made it out of thin air
-        call generate_session_expires;
+        # call generate_session_expires;
+        {{generate_session_expires}}
         set resp.http.Set-Cookie = req.http.X-Varnish-Faked-Session +
             "; expires=" + resp.http.X-Varnish-Cookie-Expires + "; path=/";
         if (req.http.Host) {
-            set resp.http.Set-Cookie = resp.http.Set-Cookie +
+            if (req.http.User-Agent ~ "^(?:{{crawler_user_agent_regex}})$") {
+                # it's a crawler, no need to share cookies
+                set resp.http.Set-Cookie = resp.http.Set-Cookie +
                 "; domain=" + regsub(req.http.Host, ":\d+$", "");
+            } else {
+                # it's a real user, allow sharing of cookies between stores
+                if(req.http.Host ~ "{{normalize_cookie_regex}}") {
+                    set resp.http.Set-Cookie = resp.http.Set-Cookie +
+                    "; domain={{normalize_cookie_target}}";
+                } else {
+                    set resp.http.Set-Cookie = resp.http.Set-Cookie +
+                    "; domain=" + regsub(req.http.Host, ":\d+$", "");
+                }
+            }
         }
         set resp.http.Set-Cookie = resp.http.Set-Cookie + "; httponly";
         unset resp.http.X-Varnish-Cookie-Expires;
