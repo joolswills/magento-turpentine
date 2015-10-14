@@ -121,6 +121,9 @@ sub vcl_recv {
     if (!{{enable_caching}} || req.http.Authorization ||
         req.request !~ "^(GET|HEAD|OPTIONS)$" ||
         req.http.Cookie ~ "varnish_bypass={{secret_handshake}}") {
+        if (req.url ~ "{{url_base_regex}}{{admin_frontname}}") {
+            set req.backend = admin;
+        }
         return (pipe);
     }
 
@@ -158,10 +161,7 @@ sub vcl_recv {
                 error 403 "External ESI requests are not allowed";
             }
         }
-        # if host is not allowed in magento pass to backend
-        if (req.http.host !~ "{{allowed_hosts_regex}}") {
-            return (pass);
-        }
+        {{allowed_hosts}}
         # no frontend cookie was sent to us AND this is not an ESI or AJAX call
         if (req.http.Cookie !~ "frontend=" && !req.http.X-Varnish-Esi-Method) {
             if (client.ip ~ crawler_acl ||
