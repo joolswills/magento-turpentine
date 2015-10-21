@@ -143,8 +143,12 @@
             -->
             <reports>
                 <rewrite>
+                    <!-- extended by Sitewards_B2BProfessional_Block_Reports_Product_Compared
                     <product_compared>Nexcessnet_Turpentine_Block_Product_Compared</product_compared>
+                    -->
+                    <!-- extended by Sitewards_B2BProfessional_Block_Reports_Product_Viewed
                     <product_viewed>Nexcessnet_Turpentine_Block_Product_Viewed</product_viewed>
+                    -->
                 </rewrite>
             </reports>
 
