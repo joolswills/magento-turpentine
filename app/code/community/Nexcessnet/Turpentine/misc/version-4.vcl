@@ -29,10 +29,6 @@ C{
 
 import std;
 
-## Custom VCL Logic
-
-{{custom_vcl_include}}
-
 ## Backends
 
 {{default_backend}}
@@ -120,7 +116,7 @@ sub vcl_recv {
     if (!{{enable_caching}} || req.http.Authorization ||
         req.method !~ "^(GET|HEAD|OPTIONS)$" ||
         req.http.Cookie ~ "varnish_bypass={{secret_handshake}}") {
-        return (pipe);
+        return (pass);
     }
 
     if({{send_unmodified_url}}) {
@@ -183,6 +179,7 @@ sub vcl_recv {
             # don't need cookies for static assets
             unset req.http.Cookie;
             unset req.http.X-Varnish-Faked-Session;
+            set req.http.X-Varnish-Static = 1;
             return (hash);
         }
         # this doesn't need a enable_url_excludes because we can be reasonably
@@ -237,6 +234,16 @@ sub vcl_pipe {
 # }
 
 sub vcl_hash {
+    # For static files we keep the hash simple and don't add the domain.
+    # This saves memory when a static file is used on multiple domains.
+    if ({{simple_hash_static}} && req.http.X-Varnish-Static) {
+        hash_data(req.url);
+        if (req.http.Accept-Encoding) {
+            # make sure we give back the right encoding
+            hash_data(req.http.Accept-Encoding);
+        }
+        return (lookup);
+    }
 
     if({{send_unmodified_url}} && req.http.X-Varnish-Cache-Url) {
         hash_data(req.http.X-Varnish-Cache-Url);
@@ -383,7 +390,7 @@ sub vcl_deliver {
                 "; domain=" + regsub(req.http.Host, ":\d+$", "");
             } else {
                 # it's a real user, allow sharing of cookies between stores
-                if(req.http.Host ~ "{{normalize_cookie_regex}}") {
+                if (req.http.Host ~ "{{normalize_cookie_regex}}" && "{{normalize_cookie_regex}}" ~ "..") {
                     set resp.http.Set-Cookie = resp.http.Set-Cookie +
                     "; domain={{normalize_cookie_target}}";
                 } else {
@@ -424,3 +431,7 @@ sub vcl_deliver {
         unset resp.http.X-Varnish-Set-Cookie;
     }
 }
+
+## Custom VCL Logic
+
+{{custom_vcl_include}}
