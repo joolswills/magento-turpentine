@@ -20,7 +20,7 @@
  */
 
 class Nexcessnet_Turpentine_Block_Catalog_Product_List_Toolbar extends
-    Mage_Catalog_Block_Product_List_Toolbar {
+    Amasty_Sorting_Block_Catalog_Product_List_Toolbar {
 
     public function _construct() {
         parent::_construct();
