@@ -157,6 +157,10 @@ sub vcl_recv {
             set req.http.X-Varnish-Currency = regsub(
                 req.http.Cookie, ".*\bcurrency=([^;]*).*", "\1");
         }
+        if (req.http.Cookie ~ "\bcurrency_code=") {
+            set req.http.X-Varnish-Currency = regsub(
+                req.http.Cookie, ".*\bcurrency_code=([^;]*).*", "\1");
+        }
         if (req.http.Cookie ~ "\bstore=") {
             set req.http.X-Varnish-Store = regsub(
                 req.http.Cookie, ".*\bstore=([^;]*).*", "\1");
@@ -176,6 +180,11 @@ sub vcl_recv {
             }
         }
         {{allowed_hosts}}
+
+        if (req.http.Cookie !~ "currency_code=" && !req.http.X-Varnish-Esi-Method) {
+            return (pipe);
+        }
+
         # no frontend cookie was sent to us AND this is not an ESI or AJAX call
         if (req.http.Cookie !~ "frontend=" && !req.http.X-Varnish-Esi-Method) {
             if (client.ip ~ crawler_acl ||
