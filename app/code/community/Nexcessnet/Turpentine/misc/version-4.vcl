@@ -103,23 +103,20 @@ sub generate_session_expires {
 ## Varnish Subroutines
 
 sub vcl_init {
-    {{directors}}
+{{directors}}
 }
 
 sub vcl_recv {
-	{{maintenance_allowed_ips}}
-
-    {{https_redirect}}
-
-    # this always needs to be done so it's up at the top
-    if (req.restarts == 0) {
-        if (req.http.X-Forwarded-For) {
-            set req.http.X-Forwarded-For =
-                req.http.X-Forwarded-For + ", " + client.ip;
-        } else {
-            set req.http.X-Forwarded-For = client.ip;
-        }
+    if (req.url ~ "{{url_base_regex}}{{admin_frontname}}") {
+        set req.backend_hint = {{admin_backend_hint}};
+    } else {
+        {{set_backend_hint}}
     }
+
+    {{maintenance_allowed_ips}}
+
+    {{https_proto_fix}}
+    {{https_redirect}}
 
     # We only deal with GET and HEAD by default
     # we test this here instead of inside the url base regex section
@@ -148,10 +145,7 @@ sub vcl_recv {
         set req.http.X-Turpentine-Secret-Handshake = "{{secret_handshake}}";
         # use the special admin backend and pipe if it's for the admin section
         if (req.url ~ "{{url_base_regex}}{{admin_frontname}}") {
-            set req.backend_hint = {{admin_backend_hint}};
             return (pipe);
-        } else {
-            {{set_backend_hint}}
         }
         if (req.http.Cookie ~ "\bcurrency=") {
             set req.http.X-Varnish-Currency = regsub(
@@ -309,7 +303,7 @@ sub vcl_hash {
 
     if (req.http.X-Varnish-Esi-Access == "private" &&
             req.http.Cookie ~ "frontend=") {
-        std.log("hash_data - frontned cookie: " + regsub(req.http.Cookie, "^.*?frontend=([^;]*);*.*$", "\1"));
+        std.log("hash_data - frontend cookie: " + regsub(req.http.Cookie, "^.*?frontend=([^;]*);*.*$", "\1"));
         hash_data(regsub(req.http.Cookie, "^.*?frontend=([^;]*);*.*$", "\1"));
         {{advanced_session_validation}}
 
@@ -364,8 +358,9 @@ sub vcl_backend_response {
                 set beresp.http.X-Varnish-Set-Cookie = beresp.http.Set-Cookie;
                 unset beresp.http.Set-Cookie;
             }
+
             # we'll set our own cache headers if we need them
-            unset beresp.http.Cache-Control;
+            # we'll override the "Cache-Control" header if needed
             unset beresp.http.Expires;
             unset beresp.http.Pragma;
             unset beresp.http.Cache;
@@ -377,6 +372,7 @@ sub vcl_backend_response {
             if (beresp.http.X-Turpentine-Cache == "0") {
                 set beresp.ttl = {{grace_period}}s;
                 set beresp.uncacheable = true;
+                set beresp.http.Cache-Control = "no-store, no-cache, must-revalidate";
                 return (deliver);
             } else {
                 if ({{force_cache_static}} &&
@@ -406,6 +402,7 @@ sub vcl_backend_response {
                         # cache objects
                         set beresp.ttl = {{grace_period}}s;
                         set beresp.uncacheable = true;
+                        set beresp.http.Cache-Control = "no-store, no-cache, must-revalidate";
                         return (deliver);
                     }
                 } else {

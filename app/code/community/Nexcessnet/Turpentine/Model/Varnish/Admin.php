@@ -104,7 +104,7 @@ class Nexcessnet_Turpentine_Model_Varnish_Admin {
                 $result[$socketName] = 'Failed to load configurator';
             } else {
                 $vcl = $cfgr->generate($helper->shouldStripVclWhitespace('apply'));
-                $vclName = Mage::helper('turpentine/data')
+                $vclName = 'vcl_' . Mage::helper('turpentine/data')
                     ->secureHash(microtime());
                 try {
                     $this->_testEsiSyntaxParam($socket);
@@ -138,7 +138,7 @@ class Nexcessnet_Turpentine_Model_Varnish_Admin {
         $result = false;
 
         if ($helper->csrfFixupNeeded()) {
-            if ($socket->getVersion() === '4.0') {
+            if ($socket->getVersion() === '4.0' || $socket->getVersion() === '4.1') {
                 $paramName = 'feature';
                 $value = $socket->param_show($paramName);
                 $value = explode("\n", $value['text']);

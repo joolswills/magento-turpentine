@@ -23,6 +23,8 @@ class Nexcessnet_Turpentine_Model_Varnish_Configurator_Version4
     extends Nexcessnet_Turpentine_Model_Varnish_Configurator_Abstract {
 
     const VCL_TEMPLATE_FILE = 'version-4.vcl';
+    const VCL_VERSION = '4';
+
 
     /**
      * Generate the Varnish 4.0-compatible VCL
@@ -35,8 +37,7 @@ class Nexcessnet_Turpentine_Model_Varnish_Configurator_Version4
         $customTemplate = $this->_getCustomTemplateFilename();
         if ($customTemplate) { 
             $tplFile = $customTemplate;
-        }
-        else { 
+        } else { 
             $tplFile = $this->_getVclTemplateFilename(self::VCL_TEMPLATE_FILE);
         }
         $vcl = $this->_formatTemplate(file_get_contents($tplFile),
@@ -73,6 +74,12 @@ class Nexcessnet_Turpentine_Model_Varnish_Configurator_Version4
             $vars['set_backend_hint']   = '';
         }
 
+        //dispatch event to allow other extensions to add custom vcl template variables
+        Mage::dispatchEvent('turpentine_get_templatevars_after', array(
+            'vars' => &$vars,
+            'vcl_version'=> self::VCL_VERSION
+        ));
+
         return $vars;
     }
 
@@ -81,6 +88,7 @@ class Nexcessnet_Turpentine_Model_Varnish_Configurator_Version4
         $tpl = <<<EOS
     new vdir       = directors.round_robin();
     new vdir_admin = directors.round_robin();
+
 EOS;
 
         if ('yes_admin' == Mage::getStoreConfig('turpentine_vcl/backend/load_balancing')) {
@@ -94,15 +102,17 @@ EOS;
         $backendNodes = Mage::helper('turpentine/data')->cleanExplode(PHP_EOL,
             Mage::getStoreConfig('turpentine_vcl/backend/backend_nodes'));
 
-        for($i = 0, $iMax = count($backendNodes); $i < $iMax; $i++) {
+        for ($i = 0, $iMax = count($backendNodes); $i < $iMax; $i++) {
             $tpl .= <<<EOS
     vdir.add_backend(web{$i});
+
 EOS;
         }
 
-        for($i = 0, $iMax = count($adminBackendNodes); $i < $iMax; $i++) {
+        for ($i = 0, $iMax = count($adminBackendNodes); $i < $iMax; $i++) {
             $tpl .= <<<EOS
     vdir_admin.add_backend(webadmin{$i});
+
 EOS;
         }
 
@@ -132,7 +142,7 @@ EOS;
                 Mage::getStoreConfig('turpentine_vcl/backend/backend_nodes'));
             $probeUrl = Mage::getStoreConfig('turpentine_vcl/backend/backend_probe_url');
 
-            if('admin' == $name) {
+            if ('admin' == $name) {
                 $prefix = 'admin';
             } else {
                 $prefix = '';
@@ -145,7 +155,7 @@ EOS;
             $parts = explode(':', $backendNode, 2);
             $host = (empty($parts[0])) ? '127.0.0.1' : $parts[0];
             $port = (empty($parts[1])) ? '80' : $parts[1];
-            $backends .= $this->_vcl_director_backend($host, $port, $prefix . $number, $probeUrl, $backendOptions);
+            $backends .= $this->_vcl_director_backend($host, $port, $prefix.$number, $probeUrl, $backendOptions);
 
             $number++;
         }
@@ -166,7 +176,7 @@ EOS;
      * @param array  $options    extra options for backend
      * @return string
      */
-    protected function _vcl_director_backend($host, $port, $descriptor, $probeUrl = '', $options = array()) {
+    protected function _vcl_director_backend($host, $port, $descriptor = '', $probeUrl = '', $options = array()) {
         $tpl = <<<EOS
         backend web{$descriptor} {
             .host = "{{host}}";
